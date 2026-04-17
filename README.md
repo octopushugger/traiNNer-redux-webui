@@ -1,4 +1,6 @@
-webui for traiNNer-redux
+
+traiNNer-redux-webui
+<img width="1573" height="1021" alt="chrome_wZ69oRU6o0" src="https://github.com/user-attachments/assets/18a719bb-34df-40c8-a7b4-df70a2548e5f" />
 
 features:
 
@@ -30,3 +32,7 @@ credits:
 claude
 
 traiNNer-redux
+
+FastAPI
+
+Uvicorn
