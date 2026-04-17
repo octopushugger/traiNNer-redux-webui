@@ -8,6 +8,7 @@ features:
 - view tensorboard graphs
 - edit configs
 - val image viewer
+- easy non-local access
 
 install:
 
