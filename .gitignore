@@ -1,0 +1,47 @@
+# ── User-specific webui data ──────────────────────────────────────────────────
+webui/instances.json
+webui/cloudflared_bin/
+
+# ── Bundled Python runtime (too large; users bring their own) ─────────────────
+python/
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+crash.log
+*.log
+
+# ── Claude Code project data (conversation history, local settings) ───────────
+.claude/
+
+# ── Archived / scratch files ──────────────────────────────────────────────────
+old/
+
+# ── traiNNer-redux (separate project — recommend cloning it independently) ────
+# If you want to track it as a git submodule instead, run:
+#   git submodule add https://github.com/the-database/traiNNer-redux traiNNer-redux
+traiNNer-redux/
+
+# ── OS clutter ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo

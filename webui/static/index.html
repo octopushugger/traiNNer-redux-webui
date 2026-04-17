@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>traiNNer-redux-webui</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="server-banner" class="hidden">Server unreachable — check that the server is running</div>
+  <div id="root">
+
+    <!-- Left panel: experiments -->
+    <div id="left-panel">
+      <div id="experiments-container">
+        <div id="experiments-header">
+          <div id="new-experiment-btn" title="New experiment">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </div>
+          <div id="exp-sort-group">
+            <span id="exp-sort-label">Sort</span>
+            <select id="exp-sort-select" title="Sort experiments">
+              <option value="last_trained">Last trained</option>
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="name_asc">Name A→Z</option>
+              <option value="name_desc">Name Z→A</option>
+            </select>
+          </div>
+        </div>
+        <div id="experiments-list"></div>
+      </div>
+    </div>
+
+    <!-- Left tab + handle -->
+    <canvas id="tab-left"    class="panel-tab"></canvas>
+    <div    id="handle-left" class="resize-handle v-handle"></div>
+
+    <!-- Center: toolbar + graph -->
+    <div id="center">
+
+      <!-- Validation progress popup (slides up from bottom) -->
+      <div id="validation-popup">
+        <div class="val-header">
+          <span class="val-title">Validation</span>
+          <span class="val-count" id="val-count"></span>
+          <span class="val-eta" id="val-eta"></span>
+        </div>
+        <div class="val-track">
+          <div class="val-fill" id="val-fill"></div>
+        </div>
+      </div>
+
+      <div id="toolbar">
+        <div id="stats-row">
+          <div class="stat-item">
+            <span class="stat-label">Epoch</span>
+            <span class="stat-value" id="stat-epoch">—</span>
+          </div>
+          <div class="stat-item" id="stat-iter-item">
+            <span class="stat-label">Iteration</span>
+            <span class="stat-value" id="stat-iter">—</span>
+            <span class="stat-iter-total" id="stat-iter-total"></span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">It/s</span>
+            <span class="stat-value" id="stat-its">—</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">ETA</span>
+            <span class="stat-value" id="stat-eta">—</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">LR</span>
+            <span class="stat-value" id="stat-lr">—</span>
+            <span class="stat-lr-normal" id="stat-lr-normal"></span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Peak VRAM</span>
+            <span class="stat-value" id="stat-vram">—</span>
+          </div>
+        </div>
+        <div class="toolbar-controls">
+          <div id="train-status" class="train-status hidden">
+            <div class="spinner"></div>
+            <span id="train-status-text">Training</span>
+          </div>
+          <div class="train-btn-wrap">
+            <button id="train-btn" class="start-btn">
+              <span id="train-btn-text">&#9654; Start Training</span>
+              <span id="train-btn-shortcut" class="train-btn-shortcut">(Ctrl+Enter)</span>
+            </button>
+            <div id="iter-progress-bar"><div id="iter-progress-fill"></div></div>
+          </div>
+        </div>
+      </div>
+      <div id="graphs-area"></div>
+
+      <!-- Visualization eye button (slides up when viz images exist) -->
+      <div id="viz-eye-wrap">
+        <button id="viz-eye-btn" title="View validation images">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right handle + tab -->
+    <div    id="handle-right" class="resize-handle v-handle"></div>
+    <canvas id="tab-right"   class="panel-tab"></canvas>
+
+    <!-- Right panel: config editor -->
+    <div id="right-panel">
+      <div id="config-panel">
+        <div class="editor-wrapper">
+          <pre class="yaml-highlight" id="yaml-highlight" aria-hidden="true"></pre>
+          <textarea id="config-editor" spellcheck="false"
+                    placeholder="Select an experiment to edit its config…"></textarea>
+          <div id="config-loading" class="hidden"></div>
+          <div id="config-save-btns">
+            <button id="discard-config-btn">Discard changes</button>
+            <button id="save-config-btn">
+              <span>Save</span>
+              <span class="save-shortcut">(Ctrl+S)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom tab + handle -->
+    <canvas id="tab-bottom"    class="panel-tab"></canvas>
+    <div    id="handle-bottom" class="resize-handle h-handle"></div>
+
+    <!-- Bottom panel: console -->
+    <div id="bottom-panel">
+      <pre id="console-output"></pre>
+    </div>
+
+    <!-- Tab shadows (blurred black divs sized to each tab, behind panels) -->
+    <div id="tab-shadow-left"   class="tab-shadow"></div>
+    <div id="tab-shadow-right"  class="tab-shadow"></div>
+    <div id="tab-shadow-bottom" class="tab-shadow"></div>
+
+  </div><!-- #root -->
+
+  <!-- Context menu -->
+  <div id="ctx-menu" class="ctx-menu hidden">
+    <div class="ctx-item" id="ctx-new">New Experiment</div>
+    <div class="ctx-item" id="ctx-rename">Rename</div>
+    <div class="ctx-item" id="ctx-duplicate">Duplicate</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item ctx-danger" id="ctx-delete">Delete</div>
+  </div>
+
+  <!-- New experiment modal -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div id="modal" class="modal">
+      <h3>New Experiment</h3>
+      <div class="form-row">
+        <label>Architecture</label>
+        <select id="modal-arch"></select>
+      </div>
+      <div class="form-row">
+        <label>Template</label>
+        <select id="modal-template"></select>
+      </div>
+      <div class="form-row">
+        <label>Name</label>
+        <input type="text" id="modal-name" placeholder="e.g. 2x_SPAN_fidelity">
+      </div>
+      <div class="modal-actions">
+        <button id="modal-cancel">Cancel</button>
+        <button id="modal-ok" class="btn-primary">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename experiment modal -->
+  <div id="rename-overlay" class="modal-overlay hidden">
+    <div id="rename-modal" class="modal">
+      <h3>Rename Experiment</h3>
+      <div class="form-row">
+        <label>New Name</label>
+        <input type="text" id="rename-input" placeholder="experiment name">
+      </div>
+      <div class="modal-actions">
+        <button id="rename-cancel">Cancel</button>
+        <button id="rename-ok" class="btn-primary">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Visualization image viewer -->
+  <div id="viz-overlay" class="hidden">
+    <div id="viz-modal">
+      <button id="viz-close-btn" title="Close (Esc)">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+             stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+
+      <div id="viz-image-section">
+        <div id="viz-viewport">
+          <img id="viz-img" draggable="false" alt="">
+        </div>
+        <div id="viz-footer">
+          <div id="viz-filename"></div>
+          <div id="viz-controls">
+            <button class="viz-nav-btn" data-step="-20">◀ 20</button>
+            <button class="viz-nav-btn" data-step="-10">◀ 10</button>
+            <button class="viz-nav-btn" data-step="-1">◀ 1</button>
+            <div class="viz-ctrl-sep"></div>
+            <button id="viz-sr-btn"  class="viz-mode-btn active">SR</button>
+            <button id="viz-lq-btn"  class="viz-mode-btn">LR</button>
+            <button id="viz-gt-btn"  class="viz-mode-btn">GT</button>
+            <div class="viz-ctrl-sep"></div>
+            <button class="viz-nav-btn" data-step="1">1 ▶</button>
+            <button class="viz-nav-btn" data-step="10">10 ▶</button>
+            <button class="viz-nav-btn" data-step="20">20 ▶</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="viz-folder-panel">
+        <div id="viz-folder-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unsaved config changes toast (shown when right panel is closed) -->
+  <div id="config-dirty-toast">You have unsaved config changes</div>
+
+  <script src="app.js"></script>
+</body>
+</html>
