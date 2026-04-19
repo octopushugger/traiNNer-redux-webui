@@ -248,6 +248,7 @@ html, body {
 }
 
 #stat-iter-item { min-width: 90px; }
+#stat-eta-item  { min-width: 150px; }
 
 .stat-label {
   font-size: 10px;
