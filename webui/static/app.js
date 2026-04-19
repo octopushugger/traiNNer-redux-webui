@@ -1238,10 +1238,7 @@ function parseStats(text) {
         // hideValidationPopup() would early-return without removing the class.
         setTimeout(() => $('validation-popup').classList.remove('visible'), 800);
         // Refresh viz check for the training experiment — new images may have been saved
-        if (key && !(S.vizData[key] && S.vizData[key].folders.length)) {
-          S.vizChecked.delete(key);
-          checkVisualization(key);
-        }
+        if (key) { S.vizChecked.delete(key); checkVisualization(key); }
       }
     }
   }
@@ -1253,10 +1250,7 @@ function parseStats(text) {
     setTrainingStatus('Training');
     S.lastIterTime = Date.now();
     setTimeout(() => $('validation-popup').classList.remove('visible'), 800);
-    if (key && !(S.vizData[key] && S.vizData[key].folders.length)) {
-      S.vizChecked.delete(key);
-      checkVisualization(key);
-    }
+    if (key) { S.vizChecked.delete(key); checkVisualization(key); }
   }
 
   // Update displays only when the user is currently viewing the training experiment
@@ -1850,6 +1844,11 @@ async function checkVisualization(key) {
     if (res && res.ok) {
       const d = await res.json();
       S.vizData[key] = d;
+      // If the viewer is open for this key, refresh its folder/image list
+      if (V.key === key && !$('viz-overlay').classList.contains('hidden')) {
+        V.folders = d.folders;
+        renderVizFolders();
+      }
     }
   }
   updateVizButton();
