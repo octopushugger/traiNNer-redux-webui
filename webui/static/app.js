@@ -55,6 +55,7 @@ const S = {
   lastIter:     0,
   lastIterTime: 0,   // Date.now() when lastIter was received
   lastIts:      0,
+  etaDeadline:  0,   // Date.now() + remaining ms when last ETA was parsed
   // Per-experiment persistent stats
   statsCache:    {},   // key → {epoch, iter, its, eta, lr_val, vram}
   statsDebounce: null, // timer for debounced server save
@@ -467,6 +468,26 @@ function renderExperiments() {
     div.addEventListener('contextmenu', (e) => { e.preventDefault(); showCtxMenu(e.clientX, e.clientY, exp.key); });
     list.appendChild(div);
   }
+}
+
+// ── ETA countdown helpers ─────────────────────────────────────────────────────
+function etaStrToMs(str) {
+  const dayM = str.match(/(\d+)\s+days?,\s*(\d+):(\d+):(\d+)/i);
+  if (dayM) return ((+dayM[1]*86400) + (+dayM[2]*3600) + (+dayM[3]*60) + +dayM[4]) * 1000;
+  const hmsM = str.match(/(\d+):(\d+):(\d+)/);
+  if (hmsM) return ((+hmsM[1]*3600) + (+hmsM[2]*60) + +hmsM[3]) * 1000;
+  return 0;
+}
+
+function msToEtaStr(ms) {
+  if (ms <= 0) return '0:00:00';
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const h    = Math.floor((totalSec % 86400) / 3600);
+  const m    = Math.floor((totalSec % 3600) / 60);
+  const s    = totalSec % 60;
+  const hms  = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return days > 0 ? `${days} day${days>1?'s':''}, ${hms}` : hms;
 }
 
 // ── Per-experiment stats display ──────────────────────────────────────────────
@@ -1097,6 +1118,7 @@ function connectWs(key) {
       const status = e.data.slice(8).trim();
       S.trainingKey  = null;
       S.lastIterTime = 0;   // stop extrapolation
+      S.etaDeadline  = 0;
       hideValidationPopup();
       clearIterProgressBar();
       renderStats(S.selectedKey);
@@ -1124,6 +1146,7 @@ function connectWs(key) {
     if (S.trainingKey === key) {
       S.trainingKey  = null;
       S.lastIterTime = 0;   // stop extrapolation
+      S.etaDeadline  = 0;
       renderStats(S.selectedKey);
       updateTrainBtn();
       // Don't clear trainingStatus,let the last sentinel message (or its absence) stand
@@ -1172,7 +1195,7 @@ function parseStats(text) {
   if (itsM) { c.its = parseFloat(itsM[1]); S.lastIts = c.its; changed = true; }
 
   const etaM = plain.match(/eta:\s*((?:\d+\s+days?,\s*)?\d{1,3}:\d{2}:\d{2})/i);
-  if (etaM) { c.eta = etaM[1]; changed = true; }
+  if (etaM) { c.eta = etaM[1]; S.etaDeadline = Date.now() + etaStrToMs(etaM[1]); changed = true; }
 
   // lr:(1.000e-04) or lr:(1.000e-04, 2.000e-04),store first value as raw float
   const lrM = plain.match(/\blr:\(([^,)]+)/i);
@@ -2162,6 +2185,10 @@ function init() {
       // Drive the print_freq progress bar
       const printFreq = S.statsCache[S.selectedKey]?.printFreq;
       if (printFreq) setIterProgressBar((estimated % printFreq) / printFreq * 100);
+    }
+    // Tick ETA countdown
+    if (S.etaDeadline > 0 && S.trainingKey && S.trainingKey === S.selectedKey) {
+      $('stat-eta').textContent = msToEtaStr(S.etaDeadline - Date.now());
     }
   }, 250);
 
