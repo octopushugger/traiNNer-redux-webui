@@ -1171,7 +1171,7 @@ function parseStats(text) {
   const itsM = plain.match(/(\d+\.?\d*)\s*it\/s/i);
   if (itsM) { c.its = parseFloat(itsM[1]); S.lastIts = c.its; changed = true; }
 
-  const etaM = plain.match(/eta:\s*(\d{1,3}:\d{2}:\d{2})/i);
+  const etaM = plain.match(/eta:\s*((?:\d+\s+days?,\s*)?\d{1,3}:\d{2}:\d{2})/i);
   if (etaM) { c.eta = etaM[1]; changed = true; }
 
   // lr:(1.000e-04) or lr:(1.000e-04, 2.000e-04),store first value as raw float
