@@ -762,6 +762,10 @@ async function toggleTraining() {
       alert(e.detail || 'Failed to start');
       updateTrainBtn();
       setTrainingStatus(null);
+    } else {
+      // Optimistically update the in-memory last_run_at so the card reflects
+      // today's date immediately without waiting for a full loadExperiments().
+      if (startExp) { startExp.last_run_at = new Date().toISOString(); renderExperiments(); }
     }
   }
 }
