@@ -673,7 +673,25 @@ def _find_tb_log_dir(inst: dict) -> "Path | None":
 _VIZ_EXTS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'}
 
 def _viz_dir(inst: dict) -> Path:
-    return TRAINNER_DIR / "experiments" / inst["name"] / "visualization"
+    """Return the visualization directory for an experiment.
+
+    traiNNer-redux names the experiments/ output folder after the config's
+    name: field, which may differ from the GUI experiment name.  Try the
+    config name first, then fall back to the GUI experiment name.
+    """
+    exp_base = TRAINNER_DIR / "experiments"
+    names = []
+    cfg_name = _config_name(inst)
+    if cfg_name:
+        names.append(cfg_name)
+    if inst["name"] not in names:
+        names.append(inst["name"])
+    for name in names:
+        p = exp_base / name / "visualization"
+        if p.is_dir():
+            return p
+    # Default to config name (or GUI name) even if the dir doesn't exist yet.
+    return exp_base / names[0] / "visualization"
 
 def _parse_val_gt_dirs(config_path: Path) -> list[Path]:
     """Return all resolved dataroot_gt paths found in a config file."""
