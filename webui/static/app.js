@@ -2191,10 +2191,25 @@ function init() {
     }
   }, 250);
 
-  // Background graph poll,3 s is much better than TensorBoard's 30 s
+  // Background graph poll — skip while the tab is hidden to avoid wasted
+  // fetches and memory pressure during long overnight runs
   setInterval(() => {
-    if (S.selectedKey) loadGraphs(S.selectedKey);
+    if (S.selectedKey && document.visibilityState === 'visible') loadGraphs(S.selectedKey);
   }, 3000);
+
+  // Recover from browser tab freeze / background kill: when the tab becomes
+  // visible again, reconnect the WS if training was running and the socket
+  // is now dead, and refresh graphs immediately.
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    const wsGone = !S.ws || S.ws.readyState === WebSocket.CLOSED || S.ws.readyState === WebSocket.CLOSING;
+    if (wsGone) {
+      // Re-check server for active training — restoreTrainingState reconnects WS if needed
+      await loadExperiments();
+      await restoreTrainingState();
+    }
+    if (S.selectedKey) loadGraphs(S.selectedKey);
+  });
 
   // Redraw charts when the window / panel is resized
   new ResizeObserver(redrawAllCharts).observe(document.getElementById('graphs-area'));
