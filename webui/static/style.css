@@ -406,20 +406,18 @@ html, body {
 
 /* Wrapper is the rainbow border (padding = border width) */
 #viz-eye-wrap {
-  position: absolute;
-  bottom: 120px;
-  left: 12px;
-  z-index: 20;
+  flex-shrink: 0;
+  align-self: center;
   border-radius: 9px;
   padding: 2px;
   opacity: 0;
-  transform: translateX(calc(-100% - 12px));
+  transform: translateY(-60px);
   pointer-events: none;
   transition: opacity 0.22s ease, transform 0.22s ease;
 }
 #viz-eye-wrap.visible {
   opacity: 1;
-  transform: translateX(0);
+  transform: translateY(0);
   pointer-events: auto;
   background: conic-gradient(from var(--rainbow-angle),
     hsl(0,100%,62%), hsl(60,100%,58%), hsl(120,100%,52%),

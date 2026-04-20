@@ -83,6 +83,16 @@
             <span class="stat-label">Peak VRAM</span>
             <span class="stat-value" id="stat-vram">—</span>
           </div>
+          <!-- Visualization eye button (slides down from above when viz images exist) -->
+          <div id="viz-eye-wrap">
+            <button id="viz-eye-btn" title="View validation images">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="toolbar-controls">
           <div id="train-status" class="train-status hidden">
@@ -99,17 +109,6 @@
         </div>
       </div>
       <div id="graphs-area"></div>
-
-      <!-- Visualization eye button (slides up when viz images exist) -->
-      <div id="viz-eye-wrap">
-        <button id="viz-eye-btn" title="View validation images">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-        </button>
-      </div>
     </div>
 
     <!-- Right handle + tab -->
