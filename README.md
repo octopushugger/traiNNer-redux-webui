@@ -9,6 +9,7 @@ features:
 - edit configs
 - val image viewer
 - easy non-local access
+- export as onnx
 
 install:
 
