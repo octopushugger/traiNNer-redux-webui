@@ -2080,6 +2080,12 @@ function init() {
     await fetch('/api/experiments/' + encodeURIComponent(ctxKey) + '/duplicate', { method: 'POST' });
     await loadExperiments();
   });
+  $('ctx-onnx').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    $('ctx-menu').classList.add('hidden');
+    if (!ctxKey) return;
+    await openOnnxFlow(ctxKey);
+  });
   $('ctx-delete').addEventListener('click', async (e) => {
     e.stopPropagation();
     $('ctx-menu').classList.add('hidden');
@@ -2107,7 +2113,12 @@ function init() {
   $('rename-ok').addEventListener('click', submitRename);
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeModal(); closeRenameModal(); closeVizViewer(); }
+    if (e.key === 'Escape') {
+      closeModal(); closeRenameModal(); closeVizViewer();
+      if (_onnxWs) { _onnxWs.close(); _onnxWs = null; }
+      $('onnx-install-overlay').classList.add('hidden');
+      $('onnx-export-overlay').classList.add('hidden');
+    }
     if (!$('viz-overlay').classList.contains('hidden')) {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
@@ -2216,6 +2227,173 @@ function init() {
 
   updateTrainBtn();
   loadExperiments();
+}
+
+// ── ONNX export ───────────────────────────────────────────────────────────────
+
+let _onnxWs = null;
+
+function _onnxLog(elId, text) {
+  const el = $(elId);
+  el.classList.remove('hidden');
+  el.innerHTML += ansiToHtml(text);
+  el.scrollTop = el.scrollHeight;
+}
+
+function _onnxLogClear(elId) {
+  const el = $(elId);
+  el.innerHTML = '';
+  el.classList.add('hidden');
+}
+
+function _onnxSetBusy(busy) {
+  $('onnx-install-btn').disabled = busy;
+  $('onnx-export-btn').disabled  = busy;
+}
+
+async function openOnnxFlow(key) {
+  const res  = await apiFetch('/api/onnx/check-deps');
+  if (!res) return;
+  const data = await res.json();
+  if (data.installed) {
+    await showOnnxExportPopup(key);
+  } else {
+    showOnnxInstallPopup(key, data.missing || data.deps || []);
+  }
+}
+
+function showOnnxInstallPopup(key, deps) {
+  _onnxLogClear('onnx-install-log');
+  $('onnx-install-btn').disabled   = false;
+  $('onnx-install-cancel').disabled = false;
+  $('onnx-install-btn').textContent = 'Install';
+
+  const list = $('onnx-deps-list');
+  list.innerHTML = '';
+  deps.forEach(d => {
+    const li = document.createElement('li');
+    li.textContent = d;
+    list.appendChild(li);
+  });
+
+  $('onnx-install-overlay').classList.remove('hidden');
+
+  $('onnx-install-btn').onclick = () => runOnnxInstall(key);
+  $('onnx-install-cancel').onclick = () => {
+    if (_onnxWs) { _onnxWs.close(); _onnxWs = null; }
+    $('onnx-install-overlay').classList.add('hidden');
+  };
+}
+
+function runOnnxInstall(key) {
+  _onnxLogClear('onnx-install-log');
+  _onnxSetBusy(true);
+  if (_onnxWs) { _onnxWs.close(); }
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(proto + '//' + location.host + '/ws/onnx-install');
+  _onnxWs = ws;
+
+  ws.onmessage = (e) => {
+    if (e.data.startsWith('\x00STATUS:')) {
+      const status = e.data.slice(8).trim();
+      _onnxSetBusy(false);
+      _onnxWs = null;
+      if (status === 'complete') {
+        $('onnx-install-btn').textContent = 'Done';
+        _onnxLog('onnx-install-log', '\n✓ Installation complete.');
+        // Proceed to export popup after brief delay
+        setTimeout(async () => {
+          $('onnx-install-overlay').classList.add('hidden');
+          await showOnnxExportPopup(key);
+        }, 800);
+      } else {
+        $('onnx-install-btn').textContent = 'Retry';
+        $('onnx-install-btn').onclick = () => runOnnxInstall(key);
+        _onnxLog('onnx-install-log', '\n✗ Installation failed.');
+      }
+      return;
+    }
+    _onnxLog('onnx-install-log', e.data);
+  };
+  ws.onerror = () => {
+    _onnxSetBusy(false);
+    _onnxLog('onnx-install-log', '\nWebSocket error.');
+  };
+}
+
+async function showOnnxExportPopup(key) {
+  const exp = S.experiments.find(e => e.key === key);
+  $('onnx-export-title').textContent = 'Export as ONNX' + (exp ? ' — ' + exp.name : '');
+  _onnxLogClear('onnx-export-log');
+  $('onnx-export-btn').disabled    = false;
+  $('onnx-export-cancel').disabled = false;
+  $('onnx-export-btn').textContent = 'Export';
+
+  const res = await apiFetch('/api/experiments/' + encodeURIComponent(key) + '/models');
+  const models = (res && res.ok) ? (await res.json()).models : [];
+
+  const sel = $('onnx-model-select');
+  sel.innerHTML = '';
+  if (!models.length) {
+    const opt = document.createElement('option');
+    opt.textContent = 'No saved models found';
+    opt.disabled = true;
+    sel.appendChild(opt);
+    $('onnx-export-btn').disabled = true;
+  } else {
+    models.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value       = p;
+      opt.textContent = p.replace(/\\/g, '/').split('/').pop();
+      sel.appendChild(opt);
+    });
+    sel.selectedIndex = sel.options.length - 1; // latest = last (highest iter)
+  }
+
+  $('onnx-export-overlay').classList.remove('hidden');
+
+  $('onnx-export-btn').onclick = () => runOnnxExport(key, sel.value);
+  $('onnx-export-cancel').onclick = () => {
+    if (_onnxWs) { _onnxWs.close(); _onnxWs = null; }
+    $('onnx-export-overlay').classList.add('hidden');
+  };
+}
+
+function runOnnxExport(key, modelPath) {
+  _onnxLogClear('onnx-export-log');
+  _onnxSetBusy(true);
+  $('onnx-export-btn').textContent = 'Done';
+  if (_onnxWs) { _onnxWs.close(); }
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url   = proto + '//' + location.host + '/ws/onnx-export/' +
+                encodeURIComponent(key) + '?model_path=' + encodeURIComponent(modelPath);
+  const ws = new WebSocket(url);
+  _onnxWs = ws;
+
+  ws.onmessage = (e) => {
+    if (e.data.startsWith('\x00STATUS:')) {
+      const status = e.data.slice(8).trim();
+      _onnxSetBusy(false);
+      _onnxWs = null;
+      if (status === 'complete') {
+        $('onnx-export-btn').textContent = 'Done';
+        $('onnx-export-btn').onclick = () => { $('onnx-export-overlay').classList.add('hidden'); };
+        _onnxLog('onnx-export-log', '\n✓ Export complete.');
+      } else {
+        $('onnx-export-btn').textContent = 'Retry';
+        $('onnx-export-btn').onclick = () => runOnnxExport(key, modelPath);
+        _onnxLog('onnx-export-log', '\n✗ Export failed.');
+      }
+      return;
+    }
+    _onnxLog('onnx-export-log', e.data);
+  };
+  ws.onerror = () => {
+    _onnxSetBusy(false);
+    _onnxLog('onnx-export-log', '\nWebSocket error.');
+  };
 }
 
 document.addEventListener('DOMContentLoaded', init);

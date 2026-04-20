@@ -18,6 +18,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib  # type: ignore
+    except ImportError:
+        tomllib = None  # type: ignore
+
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # type: ignore
+
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -36,9 +49,13 @@ ROOT_DIR        = BASE_DIR.parent                # project root (contains traiNN
 TRAINNER_DIR    = Path(os.environ.get("TRAINNER_REDUX_DIR")
                        or (ROOT_DIR / "traiNNer-redux")).resolve()
 INSTANCES_FILE  = BASE_DIR / "instances.json"
-TEMPLATES_DIR   = TRAINNER_DIR / "options" / "_templates" / "train"
-TRAIN_DIR       = TRAINNER_DIR / "options" / "train"
-TB_DIR          = TRAINNER_DIR / "tb_logger"
+TEMPLATES_DIR      = TRAINNER_DIR / "options" / "_templates" / "train"
+TRAIN_DIR          = TRAINNER_DIR / "options" / "train"
+TB_DIR             = TRAINNER_DIR / "tb_logger"
+ONNX_OPTS_DIR      = TRAINNER_DIR / "options" / "onnx"
+ONNX_TMPLS_DIR     = TRAINNER_DIR / "options" / "_templates" / "onnx"
+EXPERIMENTS_DIR    = TRAINNER_DIR / "experiments"
+PYPROJECT_FILE     = TRAINNER_DIR / "pyproject.toml"
 CLOUDFLARED_DIR = BASE_DIR / "cloudflared_bin"
 
 app = FastAPI(title="traiNNer-redux-webui")
@@ -987,6 +1004,207 @@ async def _broadcast(key: str, text: str):
             dead.append(ws)
     for ws in dead:
         ws_connections[key].remove(ws)
+
+# ── ONNX export ──────────────────────────────────────────────────────────────
+
+def _onnx_deps() -> list[str]:
+    """Return the list of onnx optional deps from pyproject.toml."""
+    if tomllib is None or not PYPROJECT_FILE.exists():
+        return []
+    with open(PYPROJECT_FILE, "rb") as f:
+        data = tomllib.load(f)
+    return data.get("project", {}).get("optional-dependencies", {}).get("onnx", [])
+
+_IMPORT_OVERRIDES = {
+    "onnxruntime-gpu":   "onnxruntime",
+    "nvidia-modelopt":   "modelopt",
+    "onnx-graphsurgeon": "onnx_graphsurgeon",
+}
+
+def _pkg_to_import(pkg_spec: str) -> str:
+    """Best-effort: turn a pip package specifier into an importable module name."""
+    name = re.split(r"[~=<>!;\[]", pkg_spec)[0].strip()
+    return _IMPORT_OVERRIDES.get(name, name.replace("-", "_"))
+
+def _onnx_missing() -> list[str]:
+    """Return the subset of onnx deps that cannot be imported."""
+    deps = _onnx_deps()
+    missing = []
+    for pkg in deps:
+        mod = _pkg_to_import(pkg)
+        result = subprocess.run(
+            [sys.executable, "-c", f"import {mod}"],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode != 0:
+            missing.append(pkg)
+    return missing
+
+def _model_iter(p: Path) -> int:
+    m = re.search(r"_(\d+)\.(pth|safetensors)$", p.name)
+    return int(m.group(1)) if m else 0
+
+@app.get("/api/onnx/check-deps")
+def check_onnx_deps():
+    deps    = _onnx_deps()
+    missing = _onnx_missing()
+    return {"installed": len(missing) == 0, "deps": deps, "missing": missing}
+
+def _experiment_models_dir(inst: dict) -> "Path | None":
+    """Resolve the models directory for an experiment.
+
+    The directory name on disk is determined by the 'name:' field in the
+    training config YAML — not necessarily inst['name'].  Try both.
+    """
+    candidates = []
+    # Primary: read name from the actual config file
+    config_name = _read_config_name(Path(inst.get("config_path", "")))
+    if config_name:
+        candidates.append(EXPERIMENTS_DIR / config_name / "models")
+    # Fallback: use the stored instance name
+    candidates.append(EXPERIMENTS_DIR / inst["name"] / "models")
+    for d in candidates:
+        if d.exists():
+            return d
+    return None
+
+@app.get("/api/experiments/{key:path}/models")
+def list_models(key: str):
+    data = load_experiments()
+    if key not in data["instances"]:
+        raise HTTPException(404, "Experiment not found")
+    inst = data["instances"][key]
+    models_dir = _experiment_models_dir(inst)
+    if models_dir is None:
+        return {"models": []}
+    files = []
+    for ext in ("*.pth", "*.pt", "*.safetensors"):
+        files.extend(models_dir.glob(ext))
+    files.sort(key=_model_iter)
+    return {"models": [str(p) for p in files]}
+
+def _build_onnx_yml(inst: dict, model_path: str) -> Path:
+    """Create the onnx options yml from the arch template and return its path."""
+    if _yaml is None:
+        raise RuntimeError("PyYAML is not installed")
+    arch = inst["arch"]
+    name = inst["name"]
+
+    # Find arch template
+    tmpl_dir  = ONNX_TMPLS_DIR / arch
+    tmpl_files = sorted(tmpl_dir.glob("*.yml")) if tmpl_dir.exists() else []
+    if not tmpl_files:
+        raise RuntimeError(f"No ONNX template found for arch '{arch}' in {tmpl_dir}")
+
+    with open(tmpl_files[0], encoding="utf-8") as f:
+        config = _yaml.safe_load(f)
+
+    # Pull scale and network_g from the training config
+    try:
+        with open(inst["config_path"], encoding="utf-8") as f:
+            train_cfg = _yaml.safe_load(f)
+        if train_cfg.get("scale"):
+            config["scale"] = train_cfg["scale"]
+        if train_cfg.get("network_g"):
+            config["network_g"] = train_cfg["network_g"]
+    except Exception:
+        pass  # use template defaults if training config can't be read
+
+    config["name"] = name
+    if "path" not in config or config["path"] is None:
+        config["path"] = {}
+    config["path"]["pretrain_network_g"] = Path(model_path).as_posix()
+
+    out_dir = ONNX_OPTS_DIR / arch
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{name}.yml"
+    with open(out_path, "w", encoding="utf-8") as f:
+        _yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    return out_path
+
+@app.websocket("/ws/onnx-install")
+async def ws_onnx_install(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        deps = _onnx_deps()
+        if not deps:
+            await websocket.send_text("No ONNX deps found in pyproject.toml\n")
+            await websocket.send_text("\x00STATUS:error\n")
+            return
+        cmd = [sys.executable, "-m", "pip", "install",
+               f"{TRAINNER_DIR}[onnx]", "--no-build-isolation"]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        while True:
+            chunk = await proc.stdout.read(4096)
+            if not chunk:
+                break
+            await websocket.send_text(chunk.decode("utf-8", errors="replace"))
+        await proc.wait()
+        if proc.returncode == 0:
+            await websocket.send_text("\x00STATUS:complete\n")
+        else:
+            await websocket.send_text(f"\x00STATUS:error\n")
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        try:
+            await websocket.send_text(f"Error: {exc}\n\x00STATUS:error\n")
+        except Exception:
+            pass
+
+@app.websocket("/ws/onnx-export/{key:path}")
+
+async def ws_onnx_export(websocket: WebSocket, key: str, model_path: str = ""):
+    await websocket.accept()
+    try:
+        data = load_experiments()
+        if key not in data["instances"]:
+            await websocket.send_text(f"Experiment '{key}' not found\n\x00STATUS:error\n")
+            return
+        inst = data["instances"][key]
+        try:
+            yml_path = _build_onnx_yml(inst, model_path)
+        except Exception as exc:
+            await websocket.send_text(f"Failed to create ONNX config: {exc}\n\x00STATUS:error\n")
+            return
+
+        await websocket.send_text(f"Created ONNX config: {yml_path}\n")
+        python  = sys.executable
+        wrapper = str(BASE_DIR / "rich_ansi_patch.py")
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        env["FORCE_COLOR"]      = "1"
+        env["COLORTERM"]        = "truecolor"
+        proc = await asyncio.create_subprocess_exec(
+            python, "-u", wrapper, "convert_to_onnx.py", "-opt", str(yml_path),
+            cwd=str(TRAINNER_DIR),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        while True:
+            chunk = await proc.stdout.read(4096)
+            if not chunk:
+                break
+            await websocket.send_text(chunk.decode("utf-8", errors="replace"))
+        await proc.wait()
+        if proc.returncode == 0:
+            onnx_dir = TRAINNER_DIR / "onnx"
+            await websocket.send_text(f"\nONNX file(s) exported to: {onnx_dir}\n")
+            await websocket.send_text("\x00STATUS:complete\n")
+        else:
+            await websocket.send_text(f"\x00STATUS:error\n")
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        try:
+            await websocket.send_text(f"Error: {exc}\n\x00STATUS:error\n")
+        except Exception:
+            pass
 
 # ── WebSocket: console stream ─────────────────────────────────────────────────
 

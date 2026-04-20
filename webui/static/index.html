@@ -155,6 +155,7 @@
     <div class="ctx-item" id="ctx-new">New Experiment</div>
     <div class="ctx-item" id="ctx-rename">Rename</div>
     <div class="ctx-item" id="ctx-duplicate">Duplicate</div>
+    <div class="ctx-item" id="ctx-onnx">Export as ONNX</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item ctx-danger" id="ctx-delete">Delete</div>
   </div>
@@ -231,6 +232,36 @@
 
       <div id="viz-folder-panel">
         <div id="viz-folder-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ONNX dependency install popup -->
+  <div id="onnx-install-overlay" class="modal-overlay hidden">
+    <div class="modal onnx-modal">
+      <h3>Install ONNX Dependencies</h3>
+      <p class="onnx-modal-desc">The following packages are missing:</p>
+      <ul id="onnx-deps-list" class="onnx-deps-list"></ul>
+      <div id="onnx-install-log" class="onnx-log hidden"></div>
+      <div class="modal-actions">
+        <button id="onnx-install-cancel">Cancel</button>
+        <button id="onnx-install-btn" class="btn-primary">Install</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ONNX export popup -->
+  <div id="onnx-export-overlay" class="modal-overlay hidden">
+    <div class="modal onnx-modal">
+      <h3 id="onnx-export-title">Export as ONNX</h3>
+      <div class="form-row">
+        <label>Model checkpoint</label>
+        <select id="onnx-model-select"></select>
+      </div>
+      <div id="onnx-export-log" class="onnx-log hidden"></div>
+      <div class="modal-actions">
+        <button id="onnx-export-cancel">Cancel</button>
+        <button id="onnx-export-btn" class="btn-primary">Export</button>
       </div>
     </div>
   </div>
